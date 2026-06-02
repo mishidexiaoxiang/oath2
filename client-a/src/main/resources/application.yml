@@ -1,0 +1,27 @@
+server:
+  port: 18081
+  servlet:
+    session:
+      cookie:
+        name: CLIENT_A_SESSION
+
+spring:
+  application:
+    name: client-a
+  security:
+    oauth2:
+      client:
+        provider:
+          sso:
+            issuer-uri: http://localhost:9000
+        registration:
+          sso:
+            provider: sso
+            client-id: client-a
+            client-secret: secret-a
+            client-name: SSO Login
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+            scope:
+              - openid
+              - profile

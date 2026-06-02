@@ -1,0 +1,14 @@
+server:
+  port: 9000
+  servlet:
+    session:
+      cookie:
+        name: AUTH_SERVER_SESSION
+
+spring:
+  application:
+    name: auth-server
+
+logging:
+  level:
+    org.springframework.security: INFO
