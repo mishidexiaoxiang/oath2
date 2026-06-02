@@ -10,9 +10,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
+import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizationRequestResolver;
+import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
 import org.springframework.security.oauth2.client.web.OAuth2LoginAuthenticationFilter;
+import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -22,12 +25,17 @@ public class SecurityConfig {
     private static final Logger log = LoggerFactory.getLogger(SecurityConfig.class);
 
     @Bean
-    SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain securityFilterChain(
+            HttpSecurity http,
+            ClientRegistrationRepository clientRegistrationRepository) throws Exception {
         http
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers("/").permitAll()
                         .anyRequest().authenticated())
-                .oauth2Login(Customizer.withDefaults())
+                .oauth2Login(oauth2 -> oauth2
+                        .authorizationEndpoint(authorization -> authorization
+                                .authorizationRequestResolver(
+                                        oauth2AuthorizationRequestResolver(clientRegistrationRepository))))
                 .addFilterBefore(oauth2CallbackLoggingFilter(), OAuth2LoginAuthenticationFilter.class)
                 .logout(logout -> logout
                         .logoutSuccessUrl("/")
@@ -35,6 +43,38 @@ public class SecurityConfig {
                         .deleteCookies("CLIENT_B_SESSION"));
 
         return http.build();
+    }
+
+    private static OAuth2AuthorizationRequestResolver oauth2AuthorizationRequestResolver(
+            ClientRegistrationRepository clientRegistrationRepository) {
+        OAuth2AuthorizationRequestResolver delegate =
+                new DefaultOAuth2AuthorizationRequestResolver(clientRegistrationRepository, "/oauth2/authorization");
+
+        return new OAuth2AuthorizationRequestResolver() {
+            @Override
+            public OAuth2AuthorizationRequest resolve(HttpServletRequest request) {
+                OAuth2AuthorizationRequest authorizationRequest = delegate.resolve(request);
+                logAuthorizationRequest(request, authorizationRequest);
+                return authorizationRequest;
+            }
+
+            @Override
+            public OAuth2AuthorizationRequest resolve(HttpServletRequest request, String clientRegistrationId) {
+                OAuth2AuthorizationRequest authorizationRequest = delegate.resolve(request, clientRegistrationId);
+                logAuthorizationRequest(request, authorizationRequest);
+                return authorizationRequest;
+            }
+        };
+    }
+
+    private static void logAuthorizationRequest(
+            HttpServletRequest request,
+            OAuth2AuthorizationRequest authorizationRequest) {
+        if (authorizationRequest != null) {
+            log.info("OAuth2 login started: requestUrl={}, authorizationUrl={}",
+                    fullRequestUrl(request),
+                    authorizationRequest.getAuthorizationRequestUri());
+        }
     }
 
     private static OncePerRequestFilter oauth2CallbackLoggingFilter() {
@@ -45,7 +85,8 @@ public class SecurityConfig {
                     HttpServletResponse response,
                     FilterChain filterChain) throws ServletException, IOException {
                 if (request.getServletPath().startsWith("/login/oauth2/code/")) {
-                    log.info("OAuth2 login callback received: registrationId={}, code={}, state={}, error={}",
+                    log.info("OAuth2 login callback received: callbackUrl={}, registrationId={}, code={}, state={}, error={}",
+                            fullRequestUrl(request),
                             request.getServletPath().substring("/login/oauth2/code/".length()),
                             request.getParameter("code"),
                             request.getParameter("state"),
@@ -54,5 +95,14 @@ public class SecurityConfig {
                 filterChain.doFilter(request, response);
             }
         };
+    }
+
+    private static String fullRequestUrl(HttpServletRequest request) {
+        StringBuilder url = new StringBuilder(request.getRequestURL());
+        String queryString = request.getQueryString();
+        if (queryString != null) {
+            url.append('?').append(queryString);
+        }
+        return url.toString();
     }
 }
