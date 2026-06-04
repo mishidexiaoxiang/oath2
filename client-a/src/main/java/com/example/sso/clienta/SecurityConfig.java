@@ -17,6 +17,8 @@ import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequest
 import org.springframework.security.oauth2.client.web.OAuth2LoginAuthenticationFilter;
 import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.savedrequest.HttpSessionRequestCache;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 @Configuration
@@ -30,8 +32,9 @@ public class SecurityConfig {
             ClientRegistrationRepository clientRegistrationRepository) throws Exception {
         http
                 .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers("/").permitAll()
+                        .requestMatchers("/", "/error", "/.well-known/appspecific/**").permitAll()
                         .anyRequest().authenticated())
+                .requestCache(cache -> cache.requestCache(oauth2RequestCache()))
                 .oauth2Login(oauth2 -> oauth2
                         .authorizationEndpoint(authorization -> authorization
                                 .authorizationRequestResolver(
@@ -43,6 +46,19 @@ public class SecurityConfig {
                         .deleteCookies("CLIENT_A_SESSION"));
 
         return http.build();
+    }
+
+    private static HttpSessionRequestCache oauth2RequestCache() {
+        HttpSessionRequestCache requestCache = new HttpSessionRequestCache();
+        requestCache.setRequestMatcher(notBrowserProbeOrErrorRequest());
+        return requestCache;
+    }
+
+    private static RequestMatcher notBrowserProbeOrErrorRequest() {
+        return request -> {
+            String path = request.getServletPath();
+            return !"/error".equals(path) && !path.startsWith("/.well-known/appspecific/");
+        };
     }
 
     private static OAuth2AuthorizationRequestResolver oauth2AuthorizationRequestResolver(
